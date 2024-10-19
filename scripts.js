@@ -9,7 +9,6 @@ const toggleIcon = document.getElementById("toggleIcon");
 let db;
 let responses = {};
 
-// Frases neutras para respostas desconhecidas
 const neutralResponses = [
     "Interessante, vou pensar mais sobre isso.",
     "Obrigado por compartilhar!",
@@ -18,18 +17,7 @@ const neutralResponses = [
     "Ok, anotado!"
 ];
 
-// Configuração de busca Fuse.js
-let fuse;
-
-// Função para inicializar o Fuse.js
-function initFuse() {
-    fuse = new Fuse(Object.keys(responses), {
-        includeScore: true,
-        threshold: 0.3, // Ajuste para melhorar a correspondência
-    });
-}
-
-// Abrindo o IndexedDB
+// Open IndexedDB
 const request = indexedDB.open("chatDB", 1);
 
 request.onupgradeneeded = function(event) {
@@ -39,23 +27,19 @@ request.onupgradeneeded = function(event) {
 
 request.onsuccess = function(event) {
     db = event.target.result;
-    loadResponses(); // Carregar respostas armazenadas
+    loadResponses();
 };
 
 request.onerror = function(event) {
     console.error("Erro ao abrir o banco de dados: ", event.target.errorCode);
 };
 
-// Função para salvar uma nova resposta no IndexedDB
 function saveResponseToDB(question, answer) {
     const transaction = db.transaction(["responses"], "readwrite");
     const objectStore = transaction.objectStore("responses");
     objectStore.put({ question, answer });
-    responses[question] = answer; // Atualizar o objeto local
-    initFuse(); // Atualizar o Fuse.js com novas respostas
 }
 
-// Função para carregar respostas armazenadas
 function loadResponses() {
     const transaction = db.transaction(["responses"], "readonly");
     const objectStore = transaction.objectStore("responses");
@@ -66,75 +50,61 @@ function loadResponses() {
             responses[cursor.key] = cursor.value.answer;
             cursor.continue();
         }
-        initFuse(); // Inicializar o Fuse.js após carregar as respostas
-        displayResponseBank(); // Atualizar o banco de respostas visível
+        displayResponseBank(); // Garante que o banco é exibido uma vez que as respostas são carregadas
     };
 }
 
-// Evento para enviar uma mensagem
-sendButton.addEventListener("click", function() {
+function updateResponseInDB(question, answer) {
+    saveResponseToDB(question, answer);
+}
+
+// Event Listener for Sending Messages
+sendButton.addEventListener("click", () => {
     const userInput = inputField.value.trim();
     if (userInput) {
-        addMessage(userInput, "user");
-        processMessage(userInput);
+        addMessage(userInput, 'user');
+        inputField.value = '';
+        loadingIndicator.style.display = 'inline'; // Exibe indicador de carregamento
+
+        // Verifica se é uma pergunta
+        if (userInput.includes('?')) {
+            // Se for uma pergunta, verifica se já existe uma resposta salva
+            if (responses[userInput]) {
+                const botResponse = responses[userInput];
+                addMessage(botResponse, 'bot');
+            } else {
+                // Pede uma nova resposta se for uma pergunta
+                const newResponse = prompt("Não conheço a resposta para isso. Por favor, insira uma resposta:");
+                if (newResponse && newResponse.trim() !== "") {
+                    responses[userInput] = newResponse.trim();
+                    addMessage(newResponse.trim(), 'bot');
+                    saveResponseToDB(userInput, newResponse.trim());
+                } else {
+                    addMessage("Desculpe, não tenho uma resposta agora.", 'bot');
+                }
+            }
+        } else {
+            // Se não for uma pergunta, responde com um dos neutros
+            const botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+            addMessage(botResponse, 'bot');
+        }
+
+        loadingIndicator.style.display = 'none'; // Oculta indicador de carregamento
     }
-    inputField.value = "";
 });
 
-// Função para adicionar uma mensagem ao chat
+// Function to add a message to the chat
 function addMessage(text, sender) {
-    const messageItem = document.createElement("li");
-    messageItem.classList.add("message", sender);
-    messageItem.textContent = text;
-    messageList.appendChild(messageItem);
-    messageList.scrollTop = messageList.scrollHeight; // Scroll automático para o fim do chat
+    const messageElement = document.createElement("li");
+    messageElement.classList.add("message", sender);
+    messageElement.textContent = text;
+    messageList.appendChild(messageElement);
+    messageList.scrollTop = messageList.scrollHeight;
 }
 
-// Função para processar a mensagem do usuário
-function processMessage(input) {
-    const searchResult = fuse.search(input);
-    
-    if (searchResult.length > 0) {
-        const bestMatch = searchResult[0].item;
-        addMessage(responses[bestMatch], "bot");
-    } else {
-        fetchDuckDuckGoAPI(input);
-    }
-}
-
-// Função para buscar resposta na API DuckDuckGo
-function fetchDuckDuckGoAPI(query) {
-    loadingIndicator.style.display = "inline"; // Mostrar indicador de carregamento
-
-    fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_html=1`)
-        .then(response => response.json())
-        .then(data => {
-            loadingIndicator.style.display = "none"; // Esconder indicador de carregamento
-
-            // Verificar se há uma resposta direta da API DuckDuckGo
-            let botResponse = data.AbstractText || null;
-
-            if (botResponse) {
-                addMessage(botResponse, "bot");
-                saveResponseToDB(query, botResponse); // Salvar resposta aprendida
-            } else {
-                // Se não houver resposta, usar uma resposta neutra
-                botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
-                addMessage(botResponse, "bot");
-            }
-        })
-        .catch(error => {
-            loadingIndicator.style.display = "none";
-            console.error("Erro ao buscar dados da API DuckDuckGo:", error);
-            // Usar uma resposta neutra em caso de erro
-            const botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
-            addMessage(botResponse, "bot");
-        });
-}
-
-// Alternar visibilidade do banco de respostas
+// Toggle Response Bank
 responseToggle.addEventListener("click", () => {
-    if (responseBank.style.display === "none") {
+    if (responseBank.style.display === "none" || !responseBank.style.display) {
         responseBank.style.display = "block";
         toggleIcon.style.transform = "rotate(180deg)";
     } else {
@@ -143,13 +113,27 @@ responseToggle.addEventListener("click", () => {
     }
 });
 
-// Mostrar banco de respostas armazenadas
+// Display responses in response bank
 function displayResponseBank() {
-    responseBank.innerHTML = ""; // Limpar o banco atual
-    for (const question in responses) {
+    responseBank.innerHTML = ''; // Limpa o conteúdo atual
+    Object.keys(responses).forEach(question => {
         const responseItem = document.createElement("div");
         responseItem.classList.add("responseItem");
-        responseItem.textContent = `${question} → ${responses[question]}`;
+        responseItem.textContent = `${question}: ${responses[question]}`;
+
+        const editButton = document.createElement("button");
+        editButton.classList.add("editResponse");
+        editButton.textContent = "Editar";
+        editButton.onclick = function () {
+            const newAnswer = prompt("Digite a nova resposta:", responses[question]);
+            if (newAnswer && newAnswer.trim() !== "") {
+                responses[question] = newAnswer.trim();
+                updateResponseInDB(question, newAnswer.trim());
+                displayResponseBank();
+            }
+        };
+
+        responseItem.appendChild(editButton);
         responseBank.appendChild(responseItem);
-    }
+    });
 }
