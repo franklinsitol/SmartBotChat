@@ -9,6 +9,7 @@ const toggleIcon = document.getElementById("toggleIcon");
 let db;
 let responses = {};
 
+// Frases neutras para respostas desconhecidas
 const neutralResponses = [
     "Interessante, vou pensar mais sobre isso.",
     "Obrigado por compartilhar!",
@@ -17,13 +18,18 @@ const neutralResponses = [
     "Ok, anotado!"
 ];
 
-// Fuse.js search setup
-const fuse = new Fuse(Object.keys(responses), {
-    includeScore: true,
-    threshold: 0.3 // Customize this for better matching
-});
+// Configuração de busca Fuse.js
+let fuse;
 
-// Open IndexedDB
+// Função para inicializar o Fuse.js
+function initFuse() {
+    fuse = new Fuse(Object.keys(responses), {
+        includeScore: true,
+        threshold: 0.3, // Ajuste para melhorar a correspondência
+    });
+}
+
+// Abrindo o IndexedDB
 const request = indexedDB.open("chatDB", 1);
 
 request.onupgradeneeded = function(event) {
@@ -33,21 +39,23 @@ request.onupgradeneeded = function(event) {
 
 request.onsuccess = function(event) {
     db = event.target.result;
-    loadResponses();
+    loadResponses(); // Carregar respostas armazenadas
 };
 
 request.onerror = function(event) {
     console.error("Erro ao abrir o banco de dados: ", event.target.errorCode);
 };
 
-// Save response to IndexedDB
+// Função para salvar uma nova resposta no IndexedDB
 function saveResponseToDB(question, answer) {
     const transaction = db.transaction(["responses"], "readwrite");
     const objectStore = transaction.objectStore("responses");
     objectStore.put({ question, answer });
+    responses[question] = answer; // Atualizar o objeto local
+    initFuse(); // Atualizar o Fuse.js com novas respostas
 }
 
-// Load responses from IndexedDB
+// Função para carregar respostas armazenadas
 function loadResponses() {
     const transaction = db.transaction(["responses"], "readonly");
     const objectStore = transaction.objectStore("responses");
@@ -58,11 +66,12 @@ function loadResponses() {
             responses[cursor.key] = cursor.value.answer;
             cursor.continue();
         }
-        displayResponseBank(); // Ensure response bank is displayed
+        initFuse(); // Inicializar o Fuse.js após carregar as respostas
+        displayResponseBank(); // Atualizar o banco de respostas visível
     };
 }
 
-// Event Listener for Sending a Message
+// Evento para enviar uma mensagem
 sendButton.addEventListener("click", function() {
     const userInput = inputField.value.trim();
     if (userInput) {
@@ -72,45 +81,58 @@ sendButton.addEventListener("click", function() {
     inputField.value = "";
 });
 
-// Display messages in the chat
+// Função para adicionar uma mensagem ao chat
 function addMessage(text, sender) {
     const messageItem = document.createElement("li");
     messageItem.classList.add("message", sender);
     messageItem.textContent = text;
     messageList.appendChild(messageItem);
-    messageList.scrollTop = messageList.scrollHeight; // Scroll to bottom
+    messageList.scrollTop = messageList.scrollHeight; // Scroll automático para o fim do chat
 }
 
-// Process the user input and generate a response
+// Função para processar a mensagem do usuário
 function processMessage(input) {
-    const storedResponse = fuse.search(input);
+    const searchResult = fuse.search(input);
     
-    if (storedResponse.length > 0) {
-        const bestMatch = storedResponse[0].item;
+    if (searchResult.length > 0) {
+        const bestMatch = searchResult[0].item;
         addMessage(responses[bestMatch], "bot");
     } else {
         fetchDuckDuckGoAPI(input);
     }
 }
 
-// Fetch answer from DuckDuckGo API if no stored response found
+// Função para buscar resposta na API DuckDuckGo
 function fetchDuckDuckGoAPI(query) {
-    loadingIndicator.style.display = "inline";
+    loadingIndicator.style.display = "inline"; // Mostrar indicador de carregamento
+
     fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_html=1`)
         .then(response => response.json())
         .then(data => {
-            loadingIndicator.style.display = "none";
-            const botResponse = data.AbstractText || neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
-            addMessage(botResponse, "bot");
-            saveResponseToDB(query, botResponse); // Save to DB for future queries
+            loadingIndicator.style.display = "none"; // Esconder indicador de carregamento
+
+            // Verificar se há uma resposta direta da API DuckDuckGo
+            let botResponse = data.AbstractText || null;
+
+            if (botResponse) {
+                addMessage(botResponse, "bot");
+                saveResponseToDB(query, botResponse); // Salvar resposta aprendida
+            } else {
+                // Se não houver resposta, usar uma resposta neutra
+                botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+                addMessage(botResponse, "bot");
+            }
         })
         .catch(error => {
             loadingIndicator.style.display = "none";
-            console.error("Erro ao buscar dados da DuckDuckGo API:", error);
+            console.error("Erro ao buscar dados da API DuckDuckGo:", error);
+            // Usar uma resposta neutra em caso de erro
+            const botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+            addMessage(botResponse, "bot");
         });
 }
 
-// Toggle visibility of response bank
+// Alternar visibilidade do banco de respostas
 responseToggle.addEventListener("click", () => {
     if (responseBank.style.display === "none") {
         responseBank.style.display = "block";
@@ -121,9 +143,9 @@ responseToggle.addEventListener("click", () => {
     }
 });
 
-// Display response bank dynamically
+// Mostrar banco de respostas armazenadas
 function displayResponseBank() {
-    responseBank.innerHTML = ""; // Clear the current bank
+    responseBank.innerHTML = ""; // Limpar o banco atual
     for (const question in responses) {
         const responseItem = document.createElement("div");
         responseItem.classList.add("responseItem");
