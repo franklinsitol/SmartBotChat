@@ -205,6 +205,8 @@
         const responseToggle = document.getElementById("responseToggle");
         const toggleIcon = document.getElementById("toggleIcon");
 
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzisPRc9fC_N2171SFjj_UDyXkslX0tbQsPCizb1Id_wLBqmctbNvxGoxQ1Lt7_T2qGtg/exec';
+
         let db;
         let responses = {};
 
@@ -257,8 +259,16 @@
             saveResponseToDB(question, answer);
         }
 
+        async function fetchResponseFromSheet(question) {
+            const response = await fetch(`${API_URL}?question=${encodeURIComponent(question)}`);
+            const data = await response.text();
+            
+            // Verifica se a resposta é "null"
+            return data !== "null" ? data : null; // Retorna a resposta ou null
+        }
+
         // Event Listener for Sending Messages
-        sendButton.addEventListener("click", () => {
+        sendButton.addEventListener("click", async () => {
             const userInput = inputField.value.trim();
             if (userInput) {
                 addMessage(userInput, 'user');
@@ -267,73 +277,85 @@
 
                 // Verifica se é uma pergunta
                 if (userInput.includes('?')) {
-                    // Se for uma pergunta, verifica se já existe uma resposta salva
-                    if (responses[userInput]) {
-                        const botResponse = responses[userInput];
-                        addMessage(botResponse, 'bot');
+                    // Primeiro, tenta buscar a resposta na Google Sheets
+                    const sheetResponse = await fetchResponseFromSheet(userInput);
+                    if (sheetResponse) {
+                        addMessage(sheetResponse, 'bot');
                     } else {
-                        // Pede uma nova resposta se for uma pergunta
-                        const newResponse = prompt("Não conheço a resposta para isso. Por favor, insira uma resposta:");
-                        if (newResponse && newResponse.trim() !== "") {
-                            responses[userInput] = newResponse.trim();
-                            addMessage(newResponse.trim(), 'bot');
-                            saveResponseToDB(userInput, newResponse.trim());
+                        // Se não encontrar na planilha, verifica no IndexedDB
+                        if (responses[userInput]) {
+                            const botResponse = responses[userInput];
+                            addMessage(botResponse, 'bot');
                         } else {
-                            addMessage("Desculpe, não entendi a resposta.", 'bot');
+                            // Pede uma nova resposta se não houver resposta
+                            const newResponse = prompt("Não conheço a resposta para isso. Por favor, insira uma resposta:");
+                            if (newResponse && newResponse.trim() !== "") {
+                                responses[userInput] = newResponse.trim();
+                                addMessage(newResponse.trim(), 'bot');
+                                saveResponseToDB(userInput, newResponse.trim());
+                            } else {
+                                addMessage("Desculpe, não entendi a resposta.", 'bot');
+                            }
                         }
                     }
                 } else {
                     giveNeutralResponse();
                 }
 
-                loadingIndicator.style.display = 'none'; // Oculta indicador de carregamento
+                loadingIndicator.style.display = 'none'; // Oculta o indicador de carregamento
             }
         });
 
-        function addMessage(message, sender) {
+        // Função para exibir mensagens
+        function addMessage(text, sender) {
             const messageElement = document.createElement("li");
             messageElement.classList.add("message", sender);
-            messageElement.innerText = message;
+            messageElement.textContent = text;
             messageList.appendChild(messageElement);
-            messageList.scrollTop = messageList.scrollHeight; // Rolagem automática
+            messageList.scrollTop = messageList.scrollHeight; // Rolagem para a parte inferior
         }
 
+        // Resposta neutra
         function giveNeutralResponse() {
-            const neutralIndex = Math.floor(Math.random() * neutralResponses.length);
-            addMessage(neutralResponses[neutralIndex], 'bot');
+            const randomIndex = Math.floor(Math.random() * neutralResponses.length);
+            const neutralResponse = neutralResponses[randomIndex];
+            addMessage(neutralResponse, 'bot');
         }
 
-        function displayResponseBank() {
-            responseBank.innerHTML = ''; // Limpa o banco de respostas
-            for (let question in responses) {
-                const responseItem = document.createElement("div");
-                responseItem.classList.add("responseItem");
-                responseItem.innerText = question;
+        // Exibir e ocultar o banco de respostas
+        responseToggle.addEventListener("click", () => {
+            const isVisible = responseBank.style.display === "block";
+            responseBank.style.display = isVisible ? "none" : "block";
+            toggleIcon.textContent = isVisible ? "▼" : "▲";
+            if (!isVisible) {
+                displayResponseBank(); // Exibe as respostas quando aberto
+            }
+        });
 
+        // Exibir o banco de respostas
+        function displayResponseBank() {
+            responseBank.innerHTML = '';
+            for (const question in responses) {
+                const responseItem = document.createElement("div");
+                responseItem.className = "responseItem";
+                responseItem.textContent = question;
+                
                 const editButton = document.createElement("button");
-                editButton.classList.add("editResponse");
-                editButton.innerText = "Editar";
+                editButton.className = "editResponse";
+                editButton.textContent = "Editar";
                 editButton.onclick = () => {
-                    const newAnswer = prompt("Editar resposta:", responses[question]);
+                    const newAnswer = prompt("Insira a nova resposta:", responses[question]);
                     if (newAnswer && newAnswer.trim() !== "") {
                         responses[question] = newAnswer.trim();
                         updateResponseInDB(question, newAnswer.trim());
-                        displayResponseBank(); // Atualiza a lista de respostas
+                        displayResponseBank(); // Atualiza a exibição do banco de respostas
                     }
                 };
 
                 responseItem.appendChild(editButton);
                 responseBank.appendChild(responseItem);
             }
-            responseBank.style.display = Object.keys(responses).length > 0 ? 'block' : 'none'; // Mostra o banco se houver respostas
         }
-
-        // Função para alternar a exibição do banco de respostas
-        responseToggle.addEventListener("click", () => {
-            const isVisible = responseBank.style.display === 'block';
-            responseBank.style.display = isVisible ? 'none' : 'block';
-            toggleIcon.innerText = isVisible ? '▼' : '▲'; // Alterna a direção da seta
-        });
     </script>
 </body>
 </html>
