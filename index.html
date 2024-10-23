@@ -132,7 +132,7 @@
         }
 
         #responseBank {
-            display: none; /* Oculta o banco de respostas inicialmente */
+            display: none;
             position: relative;
             width: 100%;
             max-height: 200px;
@@ -218,6 +218,9 @@
             "Ok, anotado!"
         ];
 
+        const lomadeeToken = '16874466809043c9fab25';
+        const sourceId = '36043605';
+
         // Open IndexedDB
         const request = indexedDB.open("chatDB", 1);
 
@@ -251,7 +254,7 @@
                     responses[cursor.key] = cursor.value.answer;
                     cursor.continue();
                 }
-                displayResponseBank(); // Garante que o banco é exibido uma vez que as respostas são carregadas
+                displayResponseBank();
             };
         }
 
@@ -263,99 +266,96 @@
             const response = await fetch(`${API_URL}?question=${encodeURIComponent(question)}`);
             const data = await response.text();
             
-            // Verifica se a resposta é "null"
-            return data !== "null" ? data : null; // Retorna a resposta ou null
+            return data !== "null" ? data : null;
         }
 
-        // Event Listener for Sending Messages
-        sendButton.addEventListener("click", async () => {
-            const userInput = inputField.value.trim();
-            if (userInput) {
-                addMessage(userInput, 'user');
-                inputField.value = '';
-                loadingIndicator.style.display = 'inline'; // Exibe indicador de carregamento
+        async function searchLomadeeOffers(query) {
+            const response = await fetch(`https://api.lomadee.com/v3/${lomadeeToken}/offer/_search?sourceId=${sourceId}&keyword=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            return data.offers || [];
+        }
 
-                // Verifica se é uma pergunta
-                if (userInput.includes('?')) {
-                    // Primeiro, tenta buscar a resposta na Google Sheets
-                    const sheetResponse = await fetchResponseFromSheet(userInput);
-                    if (sheetResponse) {
-                        addMessage(sheetResponse, 'bot');
-                    } else {
-                        // Se não encontrar na planilha, verifica no IndexedDB
-                        if (responses[userInput]) {
-                            const botResponse = responses[userInput];
-                            addMessage(botResponse, 'bot');
-                        } else {
-                            // Pede uma nova resposta se não houver resposta
-                            const newResponse = prompt("Não conheço a resposta para isso. Por favor, insira uma resposta:");
-                            if (newResponse && newResponse.trim() !== "") {
-                                responses[userInput] = newResponse.trim();
-                                addMessage(newResponse.trim(), 'bot');
-                                saveResponseToDB(userInput, newResponse.trim());
-                            } else {
-                                addMessage("Desculpe, não entendi a resposta.", 'bot');
-                            }
-                        }
-                    }
+        function sendMessage(text, className) {
+            const message = document.createElement("li");
+            message.classList.add("message", className);
+            message.innerHTML = text; // Mudei para innerHTML para permitir links clicáveis
+            messageList.appendChild(message);
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+
+        async function handleSendMessage() {
+            const question = inputField.value.trim();
+            if (!question) return;
+
+            sendMessage(question, "user");
+            inputField.value = "";
+            loadingIndicator.style.display = "inline";
+
+            if (question.toLowerCase().includes("comprar") || question.toLowerCase().includes("consultar preço")) {
+                const productQuery = question.split(/comprar|consultar preço/i)[1];
+                const offers = await searchLomadeeOffers(productQuery.trim());
+                loadingIndicator.style.display = "none";
+
+                if (offers.length > 0) {
+                    offers.forEach(offer => {
+                        sendMessage(`Produto: ${offer.name} - Preço: R$${offer.price.toFixed(2)} - Link: <a href="${offer.link}" target="_blank">${offer.link}</a>`, "bot");
+                    });
                 } else {
-                    giveNeutralResponse();
+                    sendMessage("Nenhum produto encontrado.", "bot");
                 }
-
-                loadingIndicator.style.display = 'none'; // Oculta o indicador de carregamento
+                return;
             }
-        });
 
-        // Função para exibir mensagens
-        function addMessage(text, sender) {
-            const messageElement = document.createElement("li");
-            messageElement.classList.add("message", sender);
-            messageElement.textContent = text;
-            messageList.appendChild(messageElement);
-            messageList.scrollTop = messageList.scrollHeight; // Rolagem para a parte inferior
+            const dbResponse = responses[question];
+            if (dbResponse) {
+                sendMessage(dbResponse, "bot");
+                loadingIndicator.style.display = "none";
+                return;
+            }
+
+            const sheetResponse = await fetchResponseFromSheet(question);
+            if (sheetResponse) {
+                sendMessage(sheetResponse, "bot");
+                saveResponseToDB(question, sheetResponse);
+            } else {
+                const randomNeutralResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+                sendMessage(randomNeutralResponse, "bot");
+            }
+            loadingIndicator.style.display = "none";
         }
 
-        // Resposta neutra
-        function giveNeutralResponse() {
-            const randomIndex = Math.floor(Math.random() * neutralResponses.length);
-            const neutralResponse = neutralResponses[randomIndex];
-            addMessage(neutralResponse, 'bot');
-        }
-
-        // Exibir e ocultar o banco de respostas
-        responseToggle.addEventListener("click", () => {
-            const isVisible = responseBank.style.display === "block";
-            responseBank.style.display = isVisible ? "none" : "block";
-            toggleIcon.textContent = isVisible ? "▼" : "▲";
-            if (!isVisible) {
-                displayResponseBank(); // Exibe as respostas quando aberto
-            }
-        });
-
-        // Exibir o banco de respostas
         function displayResponseBank() {
-            responseBank.innerHTML = '';
-            for (const question in responses) {
+            responseBank.innerHTML = "";
+            for (const [question, answer] of Object.entries(responses)) {
                 const responseItem = document.createElement("div");
-                responseItem.className = "responseItem";
-                responseItem.textContent = question;
-                
+                responseItem.classList.add("responseItem");
+                responseItem.textContent = `${question}: ${answer}`;
+
                 const editButton = document.createElement("button");
-                editButton.className = "editResponse";
                 editButton.textContent = "Editar";
-                editButton.onclick = () => {
-                    const newAnswer = prompt("Insira a nova resposta:", responses[question]);
-                    if (newAnswer && newAnswer.trim() !== "") {
-                        responses[question] = newAnswer.trim();
-                        updateResponseInDB(question, newAnswer.trim());
-                        displayResponseBank(); // Atualiza a exibição do banco de respostas
+                editButton.classList.add("editResponse");
+                editButton.addEventListener("click", () => {
+                    const newAnswer = prompt("Edite a resposta:", answer);
+                    if (newAnswer) {
+                        responseItem.textContent = `${question}: ${newAnswer}`;
+                        updateResponseInDB(question, newAnswer);
                     }
-                };
+                });
 
                 responseItem.appendChild(editButton);
                 responseBank.appendChild(responseItem);
             }
         }
+
+        sendButton.addEventListener("click", handleSendMessage);
+        inputField.addEventListener("keypress", (event) => {
+            if (event.key === "Enter") handleSendMessage();
+        });
+
+        responseToggle.addEventListener("click", () => {
+            responseBank.style.display = responseBank.style.display === "block" ? "none" : "block";
+            toggleIcon.textContent = toggleIcon.textContent === "▼" ? "▲" : "▼";
+        });
     </script>
 </body>
 </html>
