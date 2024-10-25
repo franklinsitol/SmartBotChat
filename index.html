@@ -6,7 +6,6 @@
     <title>SmartBot Chat</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-
         body {
             font-family: 'Poppins', sans-serif;
             background-color: #E8F0FE;
@@ -178,6 +177,15 @@
             font-size: 1.2rem;
             transition: transform 0.3s;
         }
+
+        a {
+            color: #007BFF;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -272,89 +280,109 @@
         async function searchLomadeeOffers(query) {
             const response = await fetch(`https://api.lomadee.com/v3/${lomadeeToken}/offer/_search?sourceId=${sourceId}&keyword=${encodeURIComponent(query)}`);
             const data = await response.json();
-            return data.offers || [];
+            return data.offers ? data.offers.slice(0, 3) : [];
         }
 
-        function sendMessage(text, className) {
-            const message = document.createElement("li");
-            message.classList.add("message", className);
-            message.innerHTML = text; // Mudei para innerHTML para permitir links clicáveis
-            messageList.appendChild(message);
+        async function fetchCNPJInfo(cnpj) {
+            const cleanCNPJ = cnpj.replace(/[^\d]+/g, ''); // Remove pontos e traços
+            const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCNPJ}`);
+            const data = await response.json();
+            return data;
+        }
+
+        function addMessage(content, sender = "bot") {
+            const messageElement = document.createElement("li");
+            messageElement.classList.add("message", sender);
+            messageElement.innerHTML = content; // Usando innerHTML para permitir links clicáveis
+            messageList.appendChild(messageElement);
             messageList.scrollTop = messageList.scrollHeight;
-        }
-
-        async function handleSendMessage() {
-            const question = inputField.value.trim();
-            if (!question) return;
-
-            sendMessage(question, "user");
-            inputField.value = "";
-            loadingIndicator.style.display = "inline";
-
-            if (question.toLowerCase().includes("comprar") || question.toLowerCase().includes("consultar preço")) {
-                const productQuery = question.split(/comprar|consultar preço/i)[1];
-                const offers = await searchLomadeeOffers(productQuery.trim());
-                loadingIndicator.style.display = "none";
-
-                if (offers.length > 0) {
-                    offers.forEach(offer => {
-                        sendMessage(`Produto: ${offer.name} - Preço: R$${offer.price.toFixed(2)} - Link: <a href="${offer.link}" target="_blank">${offer.link}</a>`, "bot");
-                    });
-                } else {
-                    sendMessage("Nenhum produto encontrado.", "bot");
-                }
-                return;
-            }
-
-            const dbResponse = responses[question];
-            if (dbResponse) {
-                sendMessage(dbResponse, "bot");
-                loadingIndicator.style.display = "none";
-                return;
-            }
-
-            const sheetResponse = await fetchResponseFromSheet(question);
-            if (sheetResponse) {
-                sendMessage(sheetResponse, "bot");
-                saveResponseToDB(question, sheetResponse);
-            } else {
-                const randomNeutralResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
-                sendMessage(randomNeutralResponse, "bot");
-            }
-            loadingIndicator.style.display = "none";
         }
 
         function displayResponseBank() {
             responseBank.innerHTML = "";
+
             for (const [question, answer] of Object.entries(responses)) {
                 const responseItem = document.createElement("div");
                 responseItem.classList.add("responseItem");
-                responseItem.textContent = `${question}: ${answer}`;
+                responseItem.innerHTML = `<strong>${question}</strong>: ${answer} <button class="editResponse">Editar</button>`;
+                responseBank.appendChild(responseItem);
 
-                const editButton = document.createElement("button");
-                editButton.textContent = "Editar";
-                editButton.classList.add("editResponse");
-                editButton.addEventListener("click", () => {
+                responseItem.querySelector(".editResponse").addEventListener("click", () => {
                     const newAnswer = prompt("Edite a resposta:", answer);
                     if (newAnswer) {
-                        responseItem.textContent = `${question}: ${newAnswer}`;
+                        responses[question] = newAnswer;
                         updateResponseInDB(question, newAnswer);
+                        displayResponseBank();
                     }
                 });
-
-                responseItem.appendChild(editButton);
-                responseBank.appendChild(responseItem);
             }
         }
 
+        async function handleSendMessage() {
+            const userMessage = inputField.value.trim();
+            if (!userMessage) return;
+
+            addMessage(userMessage, "user");
+            inputField.value = "";
+            loadingIndicator.style.display = "inline";
+
+            // Check for CNPJ query
+            if (/^consultar cnpj/i.test(userMessage)) {
+                const cnpj = userMessage.replace(/consultar cnpj/i, "").trim();
+                const cnpjInfo = await fetchCNPJInfo(cnpj);
+
+                if (cnpjInfo.message) {
+                    addMessage(`Erro ao buscar CNPJ: ${cnpjInfo.message}`);
+                } else {
+                    const { razao_social, nome_fantasia, cnpj: formattedCNPJ, atividade_principal, status } = cnpjInfo;
+                    addMessage(
+                        `Razão Social: ${razao_social}\nNome Fantasia: ${nome_fantasia}\nCNPJ: ${formattedCNPJ}\nAtividade Principal: ${atividade_principal[0]?.text}\nStatus: ${status}`
+                    );
+                }
+            } else if (/^comprar|consultar preço/i.test(userMessage)) {
+                const searchQuery = userMessage.replace(/comprar|consultar preço/gi, "").trim();
+                const offers = await searchLomadeeOffers(searchQuery);
+
+                if (offers.length > 0) {
+                    offers.forEach(offer => {
+                        addMessage(`Oferta: ${offer.name}<br>Preço: R$ ${offer.price}<br><a href="${offer.link}" target="_blank">Comprar</a>`);
+                    });
+                } else {
+                    addMessage("Nenhuma oferta encontrada.");
+                }
+            } else {
+                let botResponse = responses[userMessage] || await fetchResponseFromSheet(userMessage);
+
+                if (!botResponse) {
+                    botResponse = neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+                    const userAnswer = prompt("Não conheço essa pergunta. Pode me fornecer a resposta?");
+                    if (userAnswer) {
+                        botResponse = userAnswer;
+                        saveResponseToDB(userMessage, userAnswer);
+                    }
+                }
+
+                addMessage(botResponse);
+            }
+
+            loadingIndicator.style.display = "none";
+        }
+
         sendButton.addEventListener("click", handleSendMessage);
-        inputField.addEventListener("keypress", (event) => {
-            if (event.key === "Enter") handleSendMessage();
+        inputField.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                handleSendMessage();
+            }
         });
 
         responseToggle.addEventListener("click", () => {
-            responseBank.style.display = responseBank.style.display === "block" ? "none" : "block";
-            toggleIcon.textContent = toggleIcon.textContent === "▼" ? "▲" : "▼";
+            if (responseBank.style.display === "none" || responseBank.style.display === "") {
+                responseBank.style.display = "block";
+                toggleIcon.innerText = "▲";
+            } else {
+                responseBank.style.display = "none";
+                toggleIcon.innerText = "▼";
+            }
         });
     </script>
 </body>
