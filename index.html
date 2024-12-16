@@ -318,29 +318,31 @@
             loadingIndicator.style.display = "inline";
            let botResponse;
 
+           let prompt = `Você é Beemote, um assistente virtual. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
+
+             if (message.toLowerCase().includes("foi criado pelo google") || message.toLowerCase().includes("criado pelo google")) {
+                prompt = `Você é Beemote, um assistente virtual. Você não foi criado pelo Google. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
+             }
 
             if (isReligiousQuery(message)) {
                botResponse = await fetchFromJW(message);
-              if (botResponse) {
-                overlay.classList.remove('active');
-                loadingIndicator.style.display = "none";
+               if (botResponse) {
+                    overlay.classList.remove('active');
+                  loadingIndicator.style.display = "none";
                    addMessageToChat('api', botResponse);
-                    return;
+                  return;
                }
             }
-             let prompt = `Você é Beemote, um assistente virtual. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
 
-            if (message.toLowerCase().includes("foi criado pelo google") || message.toLowerCase().includes("criado pelo google")) {
-                prompt = `Você é Beemote, um assistente virtual. Você não foi criado pelo Google. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
-           }
+
            if (/^comprar|consultar preço/i.test(message)) {
               const offers = await searchLomadeeOffers(message.replace(/comprar|consultar preço/gi, "").trim());
 
               if (offers && offers.length > 0) {
                  botResponse = offers.map(offer => `Oferta: ${offer.name}<br>Preço: R$ ${offer.price}<br><a href="${offer.link}" target="_blank">Comprar</a>`).join('<br><br>');
-                  overlay.classList.remove('active');
-                    loadingIndicator.style.display = "none";
-                  addMessageToChat('api', botResponse);
+                 overlay.classList.remove('active');
+                 loadingIndicator.style.display = "none";
+                 addMessageToChat('api', botResponse);
                   return;
               }
           }
@@ -376,7 +378,7 @@
 
             } catch (error) {
                 overlay.classList.remove('active');
-               loadingIndicator.style.display = "none";
+                loadingIndicator.style.display = "none";
                 console.error('Erro ao enviar mensagem:', error);
                 addMessageToChat('api', "Erro ao obter resposta da API. Tente novamente.");
             }
