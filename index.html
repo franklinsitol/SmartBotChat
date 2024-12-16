@@ -320,6 +320,17 @@
 
            let prompt = `Você é Beemote, um assistente virtual. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
 
+
+           if (message.toLowerCase().includes("quem criou") ||
+                message.toLowerCase().includes("quem desenvolveu") ||
+               message.toLowerCase().includes("quem fez")) {
+                   botResponse = `Fui desenvolvido por <a href="https://www.linkedin.com/in/franklintoledo" target="_blank">Franklin Toledo</a>.`;
+                 overlay.classList.remove('active');
+                 loadingIndicator.style.display = "none";
+                    addMessageToChat('api', botResponse);
+                 return;
+               }
+
              if (message.toLowerCase().includes("foi criado pelo google") || message.toLowerCase().includes("criado pelo google")) {
                 prompt = `Você é Beemote, um assistente virtual. Você não foi criado pelo Google. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
              }
@@ -330,7 +341,7 @@
                     overlay.classList.remove('active');
                   loadingIndicator.style.display = "none";
                    addMessageToChat('api', botResponse);
-                  return;
+                    return;
                }
             }
 
