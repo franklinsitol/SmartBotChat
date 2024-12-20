@@ -114,8 +114,10 @@
             align-self: flex-start;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-
-       .overlay {
+      .message-api .copy-button {
+            margin-left: 10px;
+         }
+        .overlay {
             position: absolute;
             top: 0;
              left: 0;
@@ -175,6 +177,18 @@
             color: #e74c3c;
         }
 
+         .copy-button {
+            background: none;
+             border: none;
+             cursor: pointer;
+            outline: none;
+             font-size: 1rem;
+             color: #95a5a6;
+             transition: color 0.2s;
+        }
+         .copy-button:hover {
+             color: #6c7a89;
+         }
 
         @media (max-width: 600px) {
             .chat-container {
@@ -220,7 +234,7 @@
         </div>
     </div>
     <script>
-        const chatMessages = document.getElementById('chat-messages');
+          const chatMessages = document.getElementById('chat-messages');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
         const recordButton = document.getElementById('record-button');
@@ -232,18 +246,44 @@
         const sourceId = '36043605';
         let recognition;
         let isRecording = false;
+        let reclameState = 0;
+        let empresaReclamada = "";
+        let problemaReclamado = "";
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbws1knaymJXsT0sZKnO9oOjt5PdDnW4b79YtyV2qcv6Ygyt8wfCLv0Ko3uZEyBPrJDq/exec'; // Substitua pela sua url do google script
 
          // Funções auxiliares
+        const removeAsterisks = (text) => {
+              return text.replace(/\*/g, '').trim();
+         }
+
+          const formatApiResponse = (text) => {
+           const withoutAsterisks = removeAsterisks(text);
+             return withoutAsterisks.replace(/\n/g, '<br>');
+            }
+
          const addMessageToChat = (sender, message) => {
              const messageWrapper = document.createElement('div');
             messageWrapper.classList.add('message-wrapper');
             const messageElement = document.createElement('div');
             messageElement.classList.add(`message-${sender}`);
-             messageElement.innerHTML = message;
+             messageElement.innerHTML = formatApiResponse(message) + (sender === 'api' ? `<button class="copy-button" onclick="copyToClipboard(this)"> <i class="fa fa-copy"></i></button>` : "");
              messageWrapper.appendChild(messageElement);
             chatMessages.appendChild(messageWrapper);
             chatMessages.scrollTop = chatMessages.scrollHeight;
          };
+
+
+        function copyToClipboard(button) {
+            const message = button.parentNode.textContent.trim();
+            navigator.clipboard.writeText(message)
+                .then(() => {
+                    alert('Copiado para a área de transferência!');
+                })
+                .catch(err => {
+                  console.error('Erro ao copiar para a área de transferência: ', err);
+                  alert('Erro ao copiar. Por favor, tente novamente.');
+                });
+        }
 
          const searchLomadeeOffers = async (query) => {
             const response = await fetch(`https://api.lomadee.com/v3/${lomadeeToken}/offer/_search?sourceId=${sourceId}&keyword=${encodeURIComponent(query)}`);
@@ -306,144 +346,210 @@
              return null;
             }
          };
-        const sendMessage = async () => {
+
+        const sendReclamacaoToSheet = async (empresa, problema) => {
+              try {
+                 const response = await fetch(scriptURL, {
+                    method: 'POST',
+                   headers: {
+                       'Content-Type': 'application/json',
+                   },
+                    body: JSON.stringify({
+                       empresa: empresa,
+                        problema: problema,
+                  }),
+               });
+                 if(!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+               }
+                 const data = await response.json();
+                    if (data.result === "success") {
+                         addMessageToChat('api', `As informações foram enviadas para a planilha.`);
+                        return true;
+
+                   } else {
+                     addMessageToChat('api', `Houve um erro ao enviar as informações.`);
+                     return false;
+                 }
+            } catch (error) {
+                console.error('Erro ao enviar para a planilha:', error);
+                addMessageToChat('api', "Houve um erro ao enviar os dados. Tente novamente mais tarde.");
+               return false;
+           }
+         }
+
+    const handleReclamacao = async (message) => {
+        switch (reclameState) {
+             case 0:
+                addMessageToChat('api', 'Para começar a reclamação, me diga o nome da empresa:');
+                reclameState = 1;
+                 break;
+            case 1:
+                empresaReclamada = message;
+               addMessageToChat('api', `Certo! Empresa: ${empresaReclamada}.`);
+                addMessageToChat('api', 'Agora, me explique o que aconteceu:');
+                 reclameState = 2;
+               break;
+             case 2:
+                 problemaReclamado = message;
+                addMessageToChat('api', `Entendi! O problema é: ${problemaReclamado}.`);
+                  const sendResult = await sendReclamacaoToSheet(empresaReclamada,problemaReclamado)
+                if (sendResult) {
+                 addMessageToChat('api', `Para finalizar sua reclamação, acesse o site do consumidor.gov.br: <a href='https://www.consumidor.gov.br/' target='_blank'>Consumidor.gov.br</a>`);
+                  }
+                 reclameState = 0;
+                empresaReclamada = "";
+                problemaReclamado = "";
+                 break;
+          default:
+              reclameState = 0;
+             addMessageToChat('api', 'Desculpe, deu algo errado. Pode tentar de novo?');
+            }
+      }
+
+         const sendMessage = async () => {
             const message = messageInput.value;
             if (message.trim() === '') return;
 
-           addMessageToChat('user', message);
-           messageInput.value = '';
+             addMessageToChat('user', message);
+             messageInput.value = '';
 
               // Mostrar o overlay "Digitando..."
-           overlay.classList.add('active');
-            loadingIndicator.style.display = "inline";
-           let botResponse;
-
-           let prompt = `Você é Beemote, um assistente virtual. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
-
-
-           if (message.toLowerCase().includes("quem criou") ||
-                message.toLowerCase().includes("quem desenvolveu") ||
-               message.toLowerCase().includes("quem fez")) {
-                   botResponse = `Fui desenvolvido por <a href="https://www.linkedin.com/in/franklintoledo" target="_blank">Franklin Toledo</a>.`;
+             overlay.classList.add('active');
+              loadingIndicator.style.display = "inline";
+            let botResponse;
+            let prompt = `Você é Beemote, um ajudante virtual. Responda de forma simples e direta. A pergunta do usuário é: ${message};`;
+              if (message.toLowerCase().includes("quem criou") ||
+                    message.toLowerCase().includes("quem desenvolveu") ||
+                 message.toLowerCase().includes("quem fez")) {
+                  botResponse = `Fui feito por <a href="https://www.linkedin.com/in/franklintoledo" target="_blank">Franklin Toledo</a>.`;
                  overlay.classList.remove('active');
                  loadingIndicator.style.display = "none";
                     addMessageToChat('api', botResponse);
                  return;
                }
 
-             if (message.toLowerCase().includes("foi criado pelo google") || message.toLowerCase().includes("criado pelo google")) {
-                prompt = `Você é Beemote, um assistente virtual. Você não foi criado pelo Google. Responda sempre como Beemote, e mantenha essa identidade. A pergunta do usuário é: ${message};`;
-             }
-
-            if (isReligiousQuery(message)) {
+            if (message.toLowerCase().includes("foi criado pelo google") || message.toLowerCase().includes("criado pelo google")) {
+                 prompt = `Você é Beemote, um ajudante virtual. Eu não fui criado pelo Google. Responda de forma simples e direta. A pergunta do usuário é: ${message};`;
+              }
+             if (isReligiousQuery(message)) {
                botResponse = await fetchFromJW(message);
                if (botResponse) {
                     overlay.classList.remove('active');
                   loadingIndicator.style.display = "none";
                    addMessageToChat('api', botResponse);
-                    return;
-               }
-            }
+                     return;
+                }
+             }
 
-
-           if (/^comprar|consultar preço/i.test(message)) {
-              const offers = await searchLomadeeOffers(message.replace(/comprar|consultar preço/gi, "").trim());
-
-              if (offers && offers.length > 0) {
-                 botResponse = offers.map(offer => `Oferta: ${offer.name}<br>Preço: R$ ${offer.price}<br><a href="${offer.link}" target="_blank">Comprar</a>`).join('<br><br>');
+             if (message.toLowerCase().includes("registrar reclamação") || message.toLowerCase().includes("fazer reclamação") ) {
+                  handleReclamacao(message);
                  overlay.classList.remove('active');
                  loadingIndicator.style.display = "none";
-                 addMessageToChat('api', botResponse);
-                  return;
+                 return;
+               }
+             if (reclameState > 0) {
+               handleReclamacao(message);
+                overlay.classList.remove('active');
+                 loadingIndicator.style.display = "none";
+              return;
+           }
+
+           if (/^comprar|consultar preço/i.test(message)) {
+                 const offers = await searchLomadeeOffers(message.replace(/comprar|consultar preço/gi, "").trim());
+
+              if (offers && offers.length > 0) {
+                    botResponse = offers.map(offer => `Oferta: ${offer.name}<br>Preço: R$ ${offer.price}<br><a href="${offer.link}" target="_blank">Comprar</a>`).join('<br><br>');
+                   overlay.classList.remove('active');
+                   loadingIndicator.style.display = "none";
+                  addMessageToChat('api', botResponse);
+                 return;
               }
-          }
-            try {
+           }
+           try {
                 const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
+                   method: 'POST',
+                     headers: {
+                       'Content-Type': 'application/json',
                    },
                     body: JSON.stringify({
-                       "contents": [{
+                      "contents": [{
                           "parts": [{
-                                "text": prompt
-                           }]
-                       }]
-                    }),
+                               "text": prompt
+                            }]
+                        }]
+                   }),
                });
 
-               if(!response.ok) {
-                  throw new Error(`HTTP error! status: ${response.status}`);
-               }
+                if(!response.ok) {
+                   throw new Error(`HTTP error! status: ${response.status}`);
+              }
                const data = await response.json();
-               overlay.classList.remove('active');
-               loadingIndicator.style.display = "none";
+                overlay.classList.remove('active');
+                 loadingIndicator.style.display = "none";
                const apiResponse = data.candidates[0].content.parts[0].text;
-
                 if (apiResponse.includes("Não sei responder") || apiResponse.includes("não posso responder") || apiResponse.includes("Não tenho informações") ) {
                    botResponse = "Não consegui encontrar uma resposta.";
-                } else {
-                     botResponse = apiResponse;
+               } else {
+                  botResponse = apiResponse;
                }
-               addMessageToChat('api', botResponse);
+              addMessageToChat('api', botResponse);
 
-            } catch (error) {
+           } catch (error) {
                 overlay.classList.remove('active');
                 loadingIndicator.style.display = "none";
-                console.error('Erro ao enviar mensagem:', error);
-                addMessageToChat('api', "Erro ao obter resposta da API. Tente novamente.");
-            }
-        };
+               console.error('Erro ao enviar mensagem:', error);
+              addMessageToChat('api', "Erro ao obter resposta da API. Tente novamente.");
+           }
+         };
 
        // Inicialização da API de reconhecimento de voz
         recognition = handleSpeechRecognition();
 
-         if (recognition) {
-             recognition.lang = 'pt-BR';
-            recognition.continuous = false;
+        if (recognition) {
+            recognition.lang = 'pt-BR';
+           recognition.continuous = false;
              recognition.interimResults = false;
 
-           recognition.onstart = () => {
-               recordButton.classList.add('recording');
-                isRecording = true;
-            };
-            recognition.onresult = event => {
-                messageInput.value = event.results[0][0].transcript;
-               stopRecording();
-            };
-             recognition.onend = () => {
+          recognition.onstart = () => {
+             recordButton.classList.add('recording');
+              isRecording = true;
+         };
+          recognition.onresult = event => {
+               messageInput.value = event.results[0][0].transcript;
+                stopRecording();
+           };
+            recognition.onend = () => {
                 stopRecording();
             };
-            recognition.onerror = event => {
-              stopRecording();
-              console.error('Erro na transcrição de áudio:', event.error);
-                alert('Erro na transcrição de áudio. Tente novamente.');
+          recognition.onerror = event => {
+             stopRecording();
+               console.error('Erro na transcrição de áudio:', event.error);
+              alert('Erro na transcrição de áudio. Tente novamente.');
           };
        } else {
            recordButton.disabled = true;
-            recordButton.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
-             alert("A API de reconhecimento de voz não é suportada neste navegador.");
-        }
-
+           recordButton.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
+            alert("A API de reconhecimento de voz não é suportada neste navegador.");
+      }
         // Mensagem de boas-vindas do Beemote
-        addMessageToChat('api', 'Olá! Sou Beemote, seu assistente. Em que posso ajudar?');
+       addMessageToChat('api', 'Olá! Sou Beemote, seu assistente. Em que posso ajudar?');
 
         // Event listeners
-        sendButton.addEventListener('click', sendMessage);
+       sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', function(event) {
            if (event.key === 'Enter') {
               event.preventDefault();
-                sendMessage();
+               sendMessage();
            }
        });
-
        recordButton.addEventListener('click', () => {
-             if (!isRecording) {
+            if (!isRecording) {
                  startRecording();
-             } else {
-                 stopRecording();
-             }
-        });
+           } else {
+                stopRecording();
+            }
+       });
     </script>
 </body>
 </html>
