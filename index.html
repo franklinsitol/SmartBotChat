@@ -1,249 +1,114 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chat IA Local</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Beemote IA</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css">
+  <script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.9.2/dist/transformers.min.js"></script>
   <style>
-    :root {
-      --bg-light: #f7f7f8;
-      --bg-dark: #1e1e2f;
-      --text-light: #222;
-      --text-dark: #f2f2f2;
-      --primary: #10a37f;
-      --sidebar-bg: #fff;
-      --sidebar-bg-dark: #2c2c3e;
-      --accent: #ececec;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter Variable', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex; height: 100vh; overflow: hidden;
     }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    .sidebar {
+      width: 250px; background: #161b22; padding: 20px;
+      transition: transform 0.3s ease; overflow-y: auto;
     }
-
-    html, body {
-      height: 100%;
-      font-family: 'Segoe UI', sans-serif;
-      background: var(--bg-light);
-      color: var(--text-light);
-      transition: background 0.3s, color 0.3s;
+    .sidebar.hidden { transform: translateX(-100%); }
+    .toggle-btn {
+      position: absolute; left: 10px; top: 10px; background: #21262d;
+      color: white; border: none; padding: 10px; cursor: pointer;
     }
-
-    body.dark {
-      background: var(--bg-dark);
-      color: var(--text-dark);
+    .main { flex: 1; display: flex; flex-direction: column; }
+    .chat-window {
+      flex: 1; padding: 20px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 12px;
     }
-
-    #container {
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
+    .input-area {
+      display: flex; border-top: 1px solid #30363d; padding: 10px;
     }
-
-    #sidebar {
-      width: 240px;
-      background: var(--sidebar-bg);
-      border-right: 1px solid #ddd;
-      display: flex;
-      flex-direction: column;
-      padding: 16px;
-      transition: 0.3s;
+    textarea {
+      flex: 1; resize: none; padding: 12px;
+      background: #0d1117; border: 1px solid #30363d;
+      color: #e6edf3; border-radius: 8px;
     }
-
-    body.dark #sidebar {
-      background: var(--sidebar-bg-dark);
-      border-color: #444;
+    button.send-btn {
+      background: #238636; color: white;
+      border: none; margin-left: 10px; padding: 10px 16px;
+      border-radius: 8px; cursor: pointer;
     }
-
-    #sidebar.collapsed {
-      width: 60px;
-      overflow: hidden;
-    }
-
-    #toggle-sidebar {
-      background: none;
-      border: none;
-      font-size: 20px;
-      cursor: pointer;
-      margin-bottom: 16px;
-      color: inherit;
-    }
-
-    .chat-link {
-      margin: 8px 0;
-      cursor: pointer;
-      padding: 8px;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-
-    .chat-link:hover {
-      background: var(--accent);
-    }
-
-    #main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    #chatbox {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .message {
-      max-width: 90%;
-      padding: 12px 16px;
-      border-radius: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-
-    .user {
-      align-self: flex-end;
-      background: #d2e3fc;
-      color: #0b3d91;
-    }
-
-    .bot {
-      align-self: flex-start;
-      background: #e8e8ec;
-      color: inherit;
-    }
-
-    #input-area {
-      display: flex;
-      gap: 8px;
-      padding: 12px;
-      border-top: 1px solid #ddd;
-      background: #fff;
-    }
-
-    body.dark #input-area {
-      background: #2c2c3e;
-      border-color: #444;
-    }
-
-    #input {
-      flex: 1;
-      padding: 12px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-    }
-
-    #sendButton, #toggleTheme {
-      padding: 12px 16px;
-      font-size: 16px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
+    .msg.user { align-self: flex-end; background: #1f6feb; padding: 10px 14px; border-radius: 10px; max-width: 80%; }
+    .msg.bot { align-self: flex-start; background: #30363d; padding: 10px 14px; border-radius: 10px; max-width: 80%; }
     @media (max-width: 768px) {
-      #sidebar {
-        position: absolute;
-        height: 100%;
-        z-index: 100;
-      }
-
-      #sidebar.collapsed {
-        transform: translateX(-100%);
-      }
-
-      #main {
-        flex: 1;
-        width: 100%;
-      }
+      .sidebar { position: absolute; height: 100%; z-index: 10; }
     }
   </style>
 </head>
 <body>
-  <div id="container">
-    <div id="sidebar">
-      <button id="toggle-sidebar">☰</button>
-      <h2>Conversas</h2>
-      <div class="chat-link">Nova conversa</div>
-      <div class="chat-link">Histórico 1</div>
-      <div class="chat-link">Histórico 2</div>
-      <button id="toggleTheme">🌙</button>
-    </div>
 
-    <div id="main">
-      <div id="chatbox">
-        <div class="message bot">🤖 Olá! Sou um modelo de linguagem local. Me pergunte algo!</div>
-      </div>
-      <div id="input-area">
-        <input id="input" type="text" placeholder="Digite sua mensagem..." disabled />
-        <button id="sendButton" disabled>Carregando...</button>
-      </div>
+  <div class="sidebar hidden" id="sidebar">
+    <h2>Beemote IA</h2>
+    <p>Histórico de mensagens (em breve)</p>
+  </div>
+
+  <div class="main">
+    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
+    <div class="chat-window" id="chat"></div>
+    <div class="input-area">
+      <textarea id="userInput" rows="2" placeholder="Escreva sua pergunta..."></textarea>
+      <button class="send-btn" onclick="sendMessage()">Enviar</button>
     </div>
   </div>
 
-  <script type="module">
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.13.2';
+  <script>
+    const chat = document.getElementById('chat');
+    const userInput = document.getElementById('userInput');
+    const sidebar = document.getElementById('sidebar');
 
-    let generator;
-    const inputField = document.getElementById('input');
-    const sendButton = document.getElementById('sendButton');
-    const messages = document.getElementById('chatbox');
+    // Inicializando o modelo do HuggingFace com transformers.js
+    let model, tokenizer;
 
     async function loadModel() {
-      generator = await pipeline('text-generation', 'Xenova/distilgpt2');
-      inputField.disabled = false;
-      sendButton.disabled = false;
-      sendButton.innerText = "Enviar";
+      model = await window.huggingface.loadModel("Xenova/distilbert-portuguese"); // Modelo em português
+      tokenizer = await window.huggingface.loadTokenizer("Xenova/distilbert-portuguese");
     }
 
-    function appendMessage(text, type) {
+    function toggleSidebar() {
+      sidebar.classList.toggle('hidden');
+    }
+
+    function appendMessage(text, sender = 'user') {
       const div = document.createElement('div');
-      div.className = `message ${type}`;
+      div.className = `msg ${sender}`;
       div.textContent = text;
-      messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
     }
 
-    async function send() {
-      const text = inputField.value.trim();
-      if (!text || !generator) return;
+    async function sendMessage() {
+      const message = userInput.value.trim();
+      if (!message) return;
+      appendMessage(message, 'user');
+      userInput.value = '';
 
-      appendMessage(text, 'user');
-      inputField.value = '';
-      sendButton.disabled = true;
+      appendMessage('Digitando...', 'bot');
 
-      const output = await generator(text, { max_new_tokens: 50 });
-      const reply = output[0].generated_text.replace(text, '').trim();
-      appendMessage(reply || '🤖 ...', 'bot');
+      // Tokenize e processa a mensagem no modelo
+      const inputs = tokenizer.encode(message);
+      const response = await model.generate(inputs, { maxLength: 50 });
+      const decodedResponse = tokenizer.decode(response[0]);
 
-      sendButton.disabled = false;
-      inputField.focus();
+      // Mostra a resposta
+      document.querySelector('.msg.bot:last-child').textContent = decodedResponse;
     }
 
-    sendButton.addEventListener('click', send);
-    inputField.addEventListener('keydown', e => {
-      if (e.key === 'Enter') send();
-    });
-
-    document.getElementById('toggleTheme').onclick = () => {
-      document.body.classList.toggle('dark');
-    };
-
-    document.getElementById('toggle-sidebar').onclick = () => {
-      document.getElementById('sidebar').classList.toggle('collapsed');
-    };
-
+    // Carrega o modelo assim que o script for carregado
     loadModel();
   </script>
+
 </body>
 </html>
