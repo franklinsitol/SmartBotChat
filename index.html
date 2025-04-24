@@ -1,114 +1,196 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Beemote IA</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter/index.css">
-  <script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.9.2/dist/transformers.min.js"></script>
+  <link rel="icon" href="https://emoji.gg/assets/emoji/bee.png" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --fg: #e2e8f0;
+      --accent: #3b82f6;
+      --card: #1e293b;
+      --font: 'Segoe UI', sans-serif;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Inter Variable', sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      display: flex; height: 100vh; overflow: hidden;
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
     }
-    .sidebar {
-      width: 250px; background: #161b22; padding: 20px;
-      transition: transform 0.3s ease; overflow-y: auto;
+    aside {
+      width: 250px;
+      background: var(--card);
+      padding: 1rem;
+      box-shadow: 2px 0 5px #0002;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s;
     }
-    .sidebar.hidden { transform: translateX(-100%); }
+    aside.collapsed {
+      transform: translateX(-100%);
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--card);
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .history {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 1rem;
+    }
+    .message {
+      margin: .5rem 0;
+    }
+    .user {
+      text-align: right;
+      color: var(--accent);
+    }
+    .bot {
+      text-align: left;
+      color: var(--fg);
+    }
+    .input-box {
+      display: flex;
+      border-top: 1px solid #334155;
+      padding: .5rem;
+    }
+    .input-box input {
+      flex: 1;
+      padding: .5rem;
+      border-radius: 6px;
+      border: none;
+      font-size: 1rem;
+    }
     .toggle-btn {
-      position: absolute; left: 10px; top: 10px; background: #21262d;
-      color: white; border: none; padding: 10px; cursor: pointer;
+      background: none;
+      border: none;
+      color: var(--fg);
+      font-size: 1.5rem;
+      cursor: pointer;
     }
-    .main { flex: 1; display: flex; flex-direction: column; }
-    .chat-window {
-      flex: 1; padding: 20px; overflow-y: auto;
-      display: flex; flex-direction: column; gap: 12px;
+    .chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
     }
-    .input-area {
-      display: flex; border-top: 1px solid #30363d; padding: 10px;
-    }
-    textarea {
-      flex: 1; resize: none; padding: 12px;
-      background: #0d1117; border: 1px solid #30363d;
-      color: #e6edf3; border-radius: 8px;
-    }
-    button.send-btn {
-      background: #238636; color: white;
-      border: none; margin-left: 10px; padding: 10px 16px;
-      border-radius: 8px; cursor: pointer;
-    }
-    .msg.user { align-self: flex-end; background: #1f6feb; padding: 10px 14px; border-radius: 10px; max-width: 80%; }
-    .msg.bot { align-self: flex-start; background: #30363d; padding: 10px 14px; border-radius: 10px; max-width: 80%; }
     @media (max-width: 768px) {
-      .sidebar { position: absolute; height: 100%; z-index: 10; }
+      aside {
+        position: absolute;
+        z-index: 10;
+        height: 100%;
+        left: 0;
+        top: 0;
+      }
     }
   </style>
 </head>
 <body>
-
-  <div class="sidebar hidden" id="sidebar">
+  <aside id="sidebar">
     <h2>Beemote IA</h2>
-    <p>Histórico de mensagens (em breve)</p>
-  </div>
+    <div class="history" id="history"></div>
+  </aside>
+  <main>
+    <header>
+      <button class="toggle-btn" id="toggleBtn">☰</button>
+      <strong>Chat com Beemote IA</strong>
+    </header>
+    <div class="chat-box" id="chat"></div>
+    <form class="input-box" id="chat-form">
+      <input id="user-input" placeholder="Digite sua mensagem..." autocomplete="off" />
+    </form>
+  </main>
 
-  <div class="main">
-    <button class="toggle-btn" onclick="toggleSidebar()">☰</button>
-    <div class="chat-window" id="chat"></div>
-    <div class="input-area">
-      <textarea id="userInput" rows="2" placeholder="Escreva sua pergunta..."></textarea>
-      <button class="send-btn" onclick="sendMessage()">Enviar</button>
-    </div>
-  </div>
+  <script type="module">
+    import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.5.0";
 
-  <script>
-    const chat = document.getElementById('chat');
-    const userInput = document.getElementById('userInput');
-    const sidebar = document.getElementById('sidebar');
+    let chatEl = document.getElementById('chat');
+    let historyEl = document.getElementById('history');
+    let input = document.getElementById('user-input');
+    let form = document.getElementById('chat-form');
+    let sidebar = document.getElementById('sidebar');
+    let toggleBtn = document.getElementById('toggleBtn');
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+    });
 
-    // Inicializando o modelo do HuggingFace com transformers.js
-    let model, tokenizer;
+    let generator;
 
-    async function loadModel() {
-      model = await window.huggingface.loadModel("Xenova/distilbert-portuguese"); // Modelo em português
-      tokenizer = await window.huggingface.loadTokenizer("Xenova/distilbert-portuguese");
+    const initModel = async () => {
+      appendBot("Carregando modelo...");
+      generator = await pipeline("text-generation", "Xenova/phi-1_5");
+      appendBot("Modelo pronto! Pergunte algo.");
+    };
+
+    function appendUser(msg) {
+      let div = document.createElement('div');
+      div.className = 'message user';
+      div.innerText = msg;
+      chatEl.appendChild(div);
     }
 
-    function toggleSidebar() {
-      sidebar.classList.toggle('hidden');
+    function appendBot(msg) {
+      let div = document.createElement('div');
+      div.className = 'message bot';
+      div.innerText = msg;
+      chatEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
     }
 
-    function appendMessage(text, sender = 'user') {
-      const div = document.createElement('div');
-      div.className = `msg ${sender}`;
-      div.textContent = text;
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
+    async function ask(question) {
+      appendUser(question);
+      appendBot("Digitando...");
+      let outputs = await generator(question, {
+        max_new_tokens: 128,
+        temperature: 0.7,
+        top_k: 50,
+        top_p: 0.95,
+      });
+      chatEl.removeChild(chatEl.lastChild);
+      let response = outputs[0]?.generated_text.replace(question, '').trim();
+      appendBot(response);
+      saveToIndexedDB({ question, response });
     }
 
-    async function sendMessage() {
-      const message = userInput.value.trim();
-      if (!message) return;
-      appendMessage(message, 'user');
-      userInput.value = '';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let question = input.value.trim();
+      if (!question) return;
+      input.value = '';
+      await ask(question);
+    });
 
-      appendMessage('Digitando...', 'bot');
-
-      // Tokenize e processa a mensagem no modelo
-      const inputs = tokenizer.encode(message);
-      const response = await model.generate(inputs, { maxLength: 50 });
-      const decodedResponse = tokenizer.decode(response[0]);
-
-      // Mostra a resposta
-      document.querySelector('.msg.bot:last-child').textContent = decodedResponse;
+    function saveToIndexedDB(entry) {
+      let request = indexedDB.open("beemoteDB", 1);
+      request.onupgradeneeded = (event) => {
+        let db = event.target.result;
+        if (!db.objectStoreNames.contains("chat")) {
+          db.createObjectStore("chat", { autoIncrement: true });
+        }
+      };
+      request.onsuccess = (event) => {
+        let db = event.target.result;
+        let tx = db.transaction("chat", "readwrite");
+        let store = tx.objectStore("chat");
+        store.add(entry);
+      };
     }
 
-    // Carrega o modelo assim que o script for carregado
-    loadModel();
-  </script>
-
-</body>
-</html>
+    function loadHistory() {
+      let request = indexedDB.open("beemoteDB", 1);
+      request.onsuccess = (event) => {
+        let db = event.target.result;
+        let tx = db.transaction("chat", "readonly
