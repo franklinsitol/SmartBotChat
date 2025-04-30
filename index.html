@@ -18,26 +18,29 @@
       margin: 0;
       padding: 20px;
     }
+    #app {
+      max-width: 800px;
+      margin: 0 auto;
+    }
     #loading {
       text-align: center;
       margin-top: 50px;
     }
-    #progress-bar {
-      width: 100%;
-      height: 10px;
-      background: #333;
-      margin: 20px 0;
-      border-radius: 5px;
-      overflow: hidden;
-    }
-    #progress {
-      height: 100%;
-      background: var(--primary);
-      width: 0%;
-      transition: width 0.3s;
-    }
     #chat {
       display: none;
+    }
+    .message {
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .bot {
+      background: rgba(0, 150, 0, 0.2);
+    }
+    .user {
+      background: rgba(0, 100, 200, 0.2);
+      margin-left: auto;
+      max-width: 80%;
     }
     .error {
       color: var(--error);
@@ -45,142 +48,170 @@
   </style>
 </head>
 <body>
-  <div id="loading">
-    <h1>🐝 Beemote IA</h1>
-    <p id="status">Inicializando...</p>
-    <div id="progress-bar">
-      <div id="progress"></div>
+  <div id="app">
+    <div id="loading">
+      <h1>🐝 Beemote IA</h1>
+      <p id="status">Inicializando...</p>
+      <div id="progress" style="width: 100%; height: 10px; background: #333; margin: 20px 0;">
+        <div id="progress-bar" style="height: 100%; width: 0%; background: var(--primary);"></div>
+      </div>
+      <button id="retry" style="display: none;">Tentar Novamente</button>
+      <button id="lite" style="display: none; background: #4CAF50;">Usar Versão Simulada</button>
     </div>
-    <p id="progress-text">0%</p>
-    <button id="retry" style="display:none;">Tentar Novamente</button>
-    <button id="lite" style="display:none;">Usar Versão Simulada</button>
+
+    <div id="chat">
+      <div id="messages" style="height: 70vh; overflow-y: auto;"></div>
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <input type="text" id="input" placeholder="Digite sua mensagem..." style="flex: 1; padding: 10px;" disabled>
+        <button id="send" style="padding: 10px 20px;" disabled>Enviar</button>
+      </div>
+    </div>
   </div>
 
-  <div id="chat">
-    <div id="messages" style="height: 70vh; overflow-y: auto;"></div>
-    <input type="text" id="input" placeholder="Digite sua mensagem..." disabled>
-    <button id="send" disabled>Enviar</button>
-  </div>
+  <script>
+    // Configuração inicial
+    const CDN_URLS = [
+      'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12/dist/web-llm.min.js',
+      'https://unpkg.com/@mlc-ai/web-llm@0.1.12/dist/web-llm.min.js',
+      'https://esm.run/@mlc-ai/web-llm@0.1.12'
+    ];
 
-  <script type="module">
-    import { ChatModule } from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12';
-
-    // Configurações alternativas
-    const MODEL_URLS = {
-      'TinyLlama': {
-        model: 'TinyLlama-1.1B-Chat-v0.3-q4f16_1',
-        wasm: 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12/dist/TinyLlama-1.1B-Chat-v0.3-q4f16_1-webgpu.wasm'
-      },
-      'Phi-2': {
-        model: 'phi-2-q4f16_1',
-        wasm: 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12/dist/phi-2-q4f16_1-webgpu.wasm'
-      }
-    };
-
-    // Elementos da UI
-    const loadingEl = document.getElementById('loading');
-    const chatEl = document.getElementById('chat');
-    const statusEl = document.getElementById('status');
-    const progressEl = document.getElementById('progress');
-    const progressTextEl = document.getElementById('progress-text');
-    const retryBtn = document.getElementById('retry');
-    const liteBtn = document.getElementById('lite');
-
-    // Estado do aplicativo
-    let chat;
-    let currentModel = 'TinyLlama';
+    let chatModuleLoaded = false;
     let fallbackMode = false;
 
-    async function initModel() {
+    // Tenta carregar o WebLLM de diferentes fontes
+    async function loadWebLLM() {
+      const statusEl = document.getElementById('status');
+      const progressBar = document.getElementById('progress-bar');
+      
+      for (const url of CDN_URLS) {
+        try {
+          statusEl.textContent = `Carregando de ${new URL(url).hostname}...`;
+          
+          // Cria um script dinâmico
+          const script = document.createElement('script');
+          script.src = url;
+          script.type = 'module';
+          
+          await new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          
+          chatModuleLoaded = true;
+          statusEl.textContent = 'Módulo carregado com sucesso!';
+          progressBar.style.width = '100%';
+          return true;
+        } catch (error) {
+          console.warn(`Falha ao carregar de ${url}:`, error);
+          progressBar.style.width = `${(CDN_URLS.indexOf(url) + 1) * 33}%`;
+        }
+      }
+      
+      return false;
+    }
+
+    // Inicializa o chat
+    async function initChat() {
+      const statusEl = document.getElementById('status');
+      const retryBtn = document.getElementById('retry');
+      const liteBtn = document.getElementById('lite');
+      
       try {
-        statusEl.textContent = 'Carregando modelo...';
-        retryBtn.style.display = 'none';
-        liteBtn.style.display = 'none';
+        // Tenta carregar o WebLLM
+        const loaded = await loadWebLLM();
         
-        chat = new ChatModule();
-        
-        // Configuração alternativa de URL
-        await chat.setInitConfig({
-          wasmUrl: MODEL_URLS[currentModel].wasm,
-          modelUrl: `https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12/dist/${MODEL_URLS[currentModel].model}-webgpu.wasm`
-        });
+        if (!loaded) {
+          throw new Error('Não foi possível carregar o WebLLM de nenhuma fonte');
+        }
 
+        // Se chegou aqui, o módulo foi carregado
+        const { ChatModule } = window.__web_llm__ || window;
+        
+        const chat = new ChatModule();
         chat.setInitProgressCallback((report) => {
-          const percent = Math.round(report.progress * 100);
-          progressEl.style.width = `${percent}%`;
-          progressTextEl.textContent = `${percent}%`;
-          statusEl.textContent = report.text || 'Carregando...';
+          statusEl.textContent = report.text || 'Inicializando modelo...';
         });
 
-        await chat.reload(MODEL_URLS[currentModel].model);
+        await chat.reload('TinyLlama-1.1B-Chat-v0.3-q4f16_1');
         
-        // Sucesso - mostra a interface do chat
-        loadingEl.style.display = 'none';
-        chatEl.style.display = 'block';
+        // Mostra a interface do chat
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('chat').style.display = 'block';
         document.getElementById('input').disabled = false;
         document.getElementById('send').disabled = false;
         
-        // Mensagem inicial
         addMessage('Olá! Eu sou a Beemote IA. Como posso ajudar?', 'bot');
         
+        // Configura o envio de mensagens
+        document.getElementById('send').addEventListener('click', async () => {
+          const input = document.getElementById('input');
+          const text = input.value.trim();
+          if (!text) return;
+          
+          addMessage(text, 'user');
+          input.value = '';
+          input.disabled = true;
+          
+          try {
+            const reply = await chat.generate(text);
+            addMessage(reply, 'bot');
+          } catch (error) {
+            addMessage('Ocorreu um erro ao gerar a resposta', 'error');
+          } finally {
+            input.disabled = false;
+            input.focus();
+          }
+        });
+        
       } catch (error) {
-        console.error('Erro ao carregar modelo:', error);
-        statusEl.textContent = 'Erro ao carregar o modelo';
+        console.error('Erro na inicialização:', error);
+        statusEl.textContent = 'Erro ao carregar a IA';
         statusEl.className = 'error';
         retryBtn.style.display = 'inline-block';
         liteBtn.style.display = 'inline-block';
+        
+        retryBtn.onclick = initChat;
+        liteBtn.onclick = initLiteVersion;
       }
     }
 
-    function addMessage(text, sender) {
-      const msgEl = document.createElement('div');
-      msgEl.textContent = text;
-      msgEl.style.margin = '10px 0';
-      msgEl.style.padding = '10px';
-      msgEl.style.borderRadius = '5px';
-      msgEl.style.backgroundColor = sender === 'bot' ? 'rgba(129, 199, 132, 0.2)' : 'rgba(79, 195, 247, 0.2)';
-      document.getElementById('messages').appendChild(msgEl);
-    }
-
-    // Versão simulada (fallback)
+    // Versão simulada
     function initLiteVersion() {
       fallbackMode = true;
-      loadingEl.style.display = 'none';
-      chatEl.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('chat').style.display = 'block';
       document.getElementById('input').disabled = false;
       document.getElementById('send').disabled = false;
+      
       addMessage('Você está no modo simulado. Recarregue para tentar o modo completo.', 'bot');
-    }
-
-    // Event listeners
-    document.getElementById('send').addEventListener('click', async () => {
-      const input = document.getElementById('input');
-      const text = input.value.trim();
-      if (!text) return;
       
-      addMessage(text, 'user');
-      input.value = '';
-      
-      if (fallbackMode) {
+      document.getElementById('send').addEventListener('click', () => {
+        const input = document.getElementById('input');
+        const text = input.value.trim();
+        if (!text) return;
+        
+        addMessage(text, 'user');
+        input.value = '';
+        
         setTimeout(() => {
           addMessage('Eu sou a Beemote IA no modo simulado. Recarregue a página para tentar o modo completo.', 'bot');
         }, 1000);
-        return;
-      }
-      
-      try {
-        const reply = await chat.generate(text);
-        addMessage(reply, 'bot');
-      } catch (error) {
-        addMessage('Ocorreu um erro ao gerar a resposta', 'error');
-      }
-    });
+      });
+    }
 
-    retryBtn.addEventListener('click', initModel);
-    liteBtn.addEventListener('click', initLiteVersion);
+    // Adiciona mensagem ao chat
+    function addMessage(text, type) {
+      const msgEl = document.createElement('div');
+      msgEl.textContent = text;
+      msgEl.className = `message ${type}`;
+      document.getElementById('messages').appendChild(msgEl);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    }
 
     // Inicia o aplicativo
-    initModel();
+    initChat();
   </script>
 </body>
 </html>
