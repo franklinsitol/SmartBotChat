@@ -2,195 +2,344 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Beemote IA</title>
-  <link rel="icon" href="https://emoji.gg/assets/emoji/bee.png" />
   <style>
     :root {
-      --bg: #0f172a;
-      --fg: #e2e8f0;
-      --accent: #3b82f6;
-      --card: #1e293b;
-      --font: 'Segoe UI', sans-serif;
+      --bg-color: #121212;
+      --primary-color: #FFA500;
+      --primary-hover: #FF8C00;
+      --user-color: #4FC3F7;
+      --bot-color: #81C784;
+      --input-bg: #1f1f1f;
+      --card-bg: #1e1e1e;
+      --text-color: #ffffff;
+      --error-color: #f44336;
+      --loading-color: #bbbbbb;
     }
-    * { box-sizing: border-box; }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
       margin: 0;
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.6;
+      touch-action: manipulation;
+    }
+
+    #loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-color);
       display: flex;
-      height: 100vh;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+
+    #loading-message {
+      color: #fff;
+      margin: 15px 0;
+      text-align: center;
+    }
+
+    #progress-container {
+      width: 80%;
+      max-width: 300px;
+      margin: 10px 0;
+    }
+
+    #progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
       overflow: hidden;
     }
-    aside {
-      width: 250px;
-      background: var(--card);
-      padding: 1rem;
-      box-shadow: 2px 0 5px #0002;
-      display: flex;
-      flex-direction: column;
-      transition: transform 0.3s;
+
+    #progress {
+      height: 100%;
+      background: var(--primary-color);
+      width: 0%;
+      transition: width 0.3s ease;
     }
-    aside.collapsed {
-      transform: translateX(-100%);
+
+    #progress-text {
+      margin-top: 8px;
+      color: #aaa;
+      font-size: 0.85em;
     }
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
+
+    #time-estimate {
+      color: #777;
+      font-size: 0.8em;
+      margin-top: 5px;
     }
-    header {
-      background: var(--card);
-      padding: 1rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .history {
-      flex: 1;
-      overflow-y: auto;
-      margin-bottom: 1rem;
-    }
-    .message {
-      margin: .5rem 0;
-    }
-    .user {
-      text-align: right;
-      color: var(--accent);
-    }
-    .bot {
-      text-align: left;
-      color: var(--fg);
-    }
-    .input-box {
-      display: flex;
-      border-top: 1px solid #334155;
-      padding: .5rem;
-    }
-    .input-box input {
-      flex: 1;
-      padding: .5rem;
-      border-radius: 6px;
+
+    .retry-button {
+      padding: 10px 20px;
+      background: var(--primary-color);
+      color: white;
       border: none;
-      font-size: 1rem;
-    }
-    .toggle-btn {
-      background: none;
-      border: none;
-      color: var(--fg);
-      font-size: 1.5rem;
+      border-radius: 20px;
+      margin-top: 15px;
+      font-weight: bold;
       cursor: pointer;
     }
-    .chat-box {
-      flex: 1;
-      overflow-y: auto;
-      padding: 1rem;
+
+    .chat-container {
+      display: none; /* Inicialmente oculto */
+      flex-direction: column;
+      height: 100vh;
+      max-width: 900px;
+      margin: 0 auto;
     }
-    @media (max-width: 768px) {
-      aside {
-        position: absolute;
-        z-index: 10;
-        height: 100%;
-        left: 0;
-        top: 0;
+
+    .chat-header {
+      padding: 15px;
+      background: linear-gradient(135deg, #FFA500 0%, #FF8C00 100%);
+      color: white;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+
+    .chat-log {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      margin: 10px 0;
+      padding: 12px 15px;
+      border-radius: 8px;
+      max-width: 85%;
+      animation: fadeIn 0.3s ease-out;
+      word-wrap: break-word;
+    }
+
+    .message.user {
+      background: rgba(79, 195, 247, 0.1);
+      border: 1px solid var(--user-color);
+      margin-left: auto;
+      color: var(--user-color);
+    }
+
+    .message.bot {
+      background: rgba(129, 199, 132, 0.1);
+      border: 1px solid var(--bot-color);
+      margin-right: auto;
+      color: var(--bot-color);
+    }
+
+    .input-area {
+      display: flex;
+      padding: 12px;
+      background: var(--input-bg);
+      border-top: 1px solid #333;
+    }
+
+    .input-area input {
+      flex: 1;
+      padding: 12px 15px;
+      border: 1px solid #333;
+      border-radius: 20px;
+      font-size: 16px;
+      background: #2a2a2a;
+      color: var(--text-color);
+    }
+
+    .input-area button {
+      margin-left: 10px;
+      padding: 12px 20px;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 20px;
+      font-weight: bold;
+    }
+
+    @media (max-width: 600px) {
+      .message {
+        max-width: 90%;
+        padding: 10px 12px;
+        font-size: 0.9em;
       }
     }
   </style>
 </head>
 <body>
-  <aside id="sidebar">
-    <h2>Beemote IA</h2>
-    <div class="history" id="history"></div>
-  </aside>
-  <main>
-    <header>
-      <button class="toggle-btn" id="toggleBtn">☰</button>
-      <strong>Chat com Beemote IA</strong>
-    </header>
-    <div class="chat-box" id="chat"></div>
-    <form class="input-box" id="chat-form">
-      <input id="user-input" placeholder="Digite sua mensagem..." autocomplete="off" />
-    </form>
-  </main>
+  <!-- Tela de Carregamento -->
+  <div id="loading-screen">
+    <div style="color:#FFA500; font-size:1.5em;">🐝 Beemote IA</div>
+    <div id="loading-message">Inicializando...</div>
+    <div id="progress-container">
+      <div id="progress-bar">
+        <div id="progress"></div>
+      </div>
+      <div id="progress-text">0%</div>
+    </div>
+    <div id="time-estimate"></div>
+    <button id="retry-button" class="retry-button" style="display:none;">Tentar Novamente</button>
+    <button id="lite-button" class="retry-button" style="display:none; background: #4CAF50;">Usar Versão Lite</button>
+  </div>
+
+  <!-- Chat (inicialmente oculto) -->
+  <div class="chat-container" id="chat-ui">
+    <div class="chat-header">
+      Beemote IA
+    </div>
+    <div class="chat-log" id="chat-log"></div>
+    <div class="input-area">
+      <input type="text" id="user-input" placeholder="Digite sua mensagem..." disabled />
+      <button id="send-button" disabled>Enviar</button>
+    </div>
+  </div>
 
   <script type="module">
-    import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.5.0";
+    import { ChatModule } from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.1.12';
 
-    let chatEl = document.getElementById('chat');
-    let historyEl = document.getElementById('history');
-    let input = document.getElementById('user-input');
-    let form = document.getElementById('chat-form');
-    let sidebar = document.getElementById('sidebar');
-    let toggleBtn = document.getElementById('toggleBtn');
-    toggleBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('collapsed');
+    // Elementos da UI
+    const loadingScreen = document.getElementById("loading-screen");
+    const chatUI = document.getElementById("chat-ui");
+    const chatLog = document.getElementById("chat-log");
+    const userInput = document.getElementById("user-input");
+    const sendButton = document.getElementById("send-button");
+    const retryButton = document.getElementById("retry-button");
+    const liteButton = document.getElementById("lite-button");
+    const progressBar = document.getElementById("progress");
+    const progressText = document.getElementById("progress-text");
+    const loadingMessage = document.getElementById("loading-message");
+    const timeEstimate = document.getElementById("time-estimate");
+
+    // Variáveis de estado
+    let chat;
+    let modelLoaded = false;
+    let startTime;
+
+    // Inicializa o WebLLM
+    async function initWebLLM() {
+      try {
+        startTime = Date.now();
+        chat = new ChatModule();
+        
+        // Configura o callback de progresso
+        chat.setInitProgressCallback((report) => {
+          const percent = Math.round(report.progress * 100);
+          progressBar.style.width = `${percent}%`;
+          progressText.textContent = `${percent}%`;
+          
+          // Atualiza mensagem baseada no progresso
+          if (percent < 30) {
+            loadingMessage.textContent = "Baixando modelo...";
+          } else if (percent < 70) {
+            loadingMessage.textContent = "Processando...";
+          } else {
+            loadingMessage.textContent = "Finalizando...";
+          }
+          
+          // Calcula tempo estimado
+          if (percent > 5) {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const remaining = Math.round((elapsed / percent) * (100 - percent));
+            timeEstimate.textContent = `Tempo estimado: ${remaining}s`;
+          }
+        });
+
+        // Carrega o modelo (usando TinyLlama para velocidade)
+        await chat.reload("TinyLlama-1.1B-Chat-v0.3-q4f16_1");
+        
+        // Sucesso!
+        modelLoaded = true;
+        loadingScreen.style.display = "none";
+        chatUI.style.display = "flex";
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        userInput.focus();
+        
+        // Mensagem de boas-vindas
+        addMessage("Olá! Eu sou a Beemote IA 🐝. Como posso te ajudar hoje?", "bot");
+        
+      } catch (error) {
+        console.error("Erro ao carregar:", error);
+        loadingMessage.textContent = "Erro ao carregar o modelo.";
+        retryButton.style.display = "block";
+        liteButton.style.display = "block";
+        progressBar.style.background = "var(--error-color)";
+      }
+    }
+
+    // Versão Lite (fallback)
+    function initLiteVersion() {
+      loadingMessage.textContent = "Iniciando versão Lite...";
+      modelLoaded = true; // Marca como "carregado" para permitir interação
+      
+      setTimeout(() => {
+        loadingScreen.style.display = "none";
+        chatUI.style.display = "flex";
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        addMessage("Você está no modo Lite. Algumas funcionalidades são limitadas.", "bot");
+      }, 1000);
+    }
+
+    // Adiciona mensagem ao chat
+    function addMessage(text, sender) {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `message ${sender}`;
+      messageDiv.textContent = text;
+      chatLog.appendChild(messageDiv);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    // Envia mensagem
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text || !modelLoaded) return;
+      
+      userInput.value = "";
+      addMessage(text, "user");
+      
+      // Resposta simulada no modo Lite
+      if (!chat) {
+        setTimeout(() => {
+          addMessage("(Modo Lite) Eu sou a Beemote IA. Recarregue para tentar o modo completo.", "bot");
+        }, 1000);
+        return;
+      }
+      
+      // Resposta real com WebLLM
+      try {
+        const reply = await chat.generate(text);
+        addMessage(reply, "bot");
+      } catch (error) {
+        addMessage("Erro ao gerar resposta.", "error");
+      }
+    }
+
+    // Event Listeners
+    sendButton.addEventListener("click", sendMessage);
+    userInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") sendMessage();
     });
+    retryButton.addEventListener("click", initWebLLM);
+    liteButton.addEventListener("click", initLiteVersion);
 
-    let generator;
-
-    const initModel = async () => {
-      appendBot("Carregando modelo...");
-      generator = await pipeline("text-generation", "Xenova/phi-1_5");
-      appendBot("Modelo pronto! Pergunte algo.");
-    };
-
-    function appendUser(msg) {
-      let div = document.createElement('div');
-      div.className = 'message user';
-      div.innerText = msg;
-      chatEl.appendChild(div);
-    }
-
-    function appendBot(msg) {
-      let div = document.createElement('div');
-      div.className = 'message bot';
-      div.innerText = msg;
-      chatEl.appendChild(div);
-      chatEl.scrollTop = chatEl.scrollHeight;
-    }
-
-    async function ask(question) {
-      appendUser(question);
-      appendBot("Digitando...");
-      let outputs = await generator(question, {
-        max_new_tokens: 128,
-        temperature: 0.7,
-        top_k: 50,
-        top_p: 0.95,
-      });
-      chatEl.removeChild(chatEl.lastChild);
-      let response = outputs[0]?.generated_text.replace(question, '').trim();
-      appendBot(response);
-      saveToIndexedDB({ question, response });
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      let question = input.value.trim();
-      if (!question) return;
-      input.value = '';
-      await ask(question);
-    });
-
-    function saveToIndexedDB(entry) {
-      let request = indexedDB.open("beemoteDB", 1);
-      request.onupgradeneeded = (event) => {
-        let db = event.target.result;
-        if (!db.objectStoreNames.contains("chat")) {
-          db.createObjectStore("chat", { autoIncrement: true });
-        }
-      };
-      request.onsuccess = (event) => {
-        let db = event.target.result;
-        let tx = db.transaction("chat", "readwrite");
-        let store = tx.objectStore("chat");
-        store.add(entry);
-      };
-    }
-
-    function loadHistory() {
-      let request = indexedDB.open("beemoteDB", 1);
-      request.onsuccess = (event) => {
-        let db = event.target.result;
-        let tx = db.transaction("chat", "readonly
+    // Inicia automaticamente
+    initWebLLM();
+  </script>
+</body>
+</html>
